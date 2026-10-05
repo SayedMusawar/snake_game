@@ -1,4 +1,10 @@
+#ifdef __EMSCRIPTEN__
+#include "web/sfml_web.hpp"
+#include <emscripten.h>
+#include <functional>
+#else
 #include <SFML/Graphics.hpp>
+#endif
 #include <iostream>
 #include <fstream>
 #include <ctime>
@@ -11,7 +17,18 @@ const int height = 24;
 const int blockSize = 24;
 const float frameTime = 0.09f;
 
-enum Direction {
+#ifdef __EMSCRIPTEN__
+// Browser build: the font is bundled, and the high score lives in a folder
+// that the page keeps in the visitor's browser (IndexedDB).
+const char *const kFontPath = "/DejaVuSans-Bold.ttf";
+const char *const kHighScoreFile = "/persist/highscore.txt";
+#else
+const char *const kFontPath = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+const char *const kHighScoreFile = "highscore.txt";
+#endif
+
+enum Direction
+{
     STOP = 0,
     LEFT,
     RIGHT,
@@ -19,7 +36,8 @@ enum Direction {
     DOWN
 };
 
-struct Segment {
+struct Segment
+{
     int x, y;
 };
 
@@ -36,33 +54,52 @@ float bonusTimer = 0.f;
 
 std::deque<Segment> snake;
 
-void LoadHighScore() {
-    std::ifstream file("highscore.txt");
-    if (file.is_open()) {
+void LoadHighScore()
+{
+    std::ifstream file(kHighScoreFile);
+    if (file.is_open())
+    {
         file >> highScore;
         file.close();
     }
 }
 
-void SaveHighScore() {
-    if (score > highScore) {
+void SaveHighScore()
+{
+    if (score > highScore)
+    {
         highScore = score;
-        std::ofstream file("highscore.txt", std::ios::trunc);
-        if (file.is_open()) {
+        std::ofstream file(kHighScoreFile, std::ios::trunc);
+        if (file.is_open())
+        {
             file << highScore;
             file.close();
         }
+#ifdef __EMSCRIPTEN__
+        EM_ASM({
+            try
+            {
+                FS.syncfs(false, function(err){});
+            }
+            catch (e)
+            {
+            }
+        });
+#endif
     }
 }
 
-void SpawnFood() {
+void SpawnFood()
+{
     bool onSnake;
-    do {
+    do
+    {
         onSnake = false;
         foodX = rand() % width;
         foodY = rand() % height;
         for (auto &s : snake)
-            if (s.x == foodX && s.y == foodY) {
+            if (s.x == foodX && s.y == foodY)
+            {
                 onSnake = true;
                 break;
             }
@@ -72,7 +109,8 @@ void SpawnFood() {
     bonusTimer = 5.f;
 }
 
-void Setup() {
+void Setup()
+{
     gameOver = false;
     paused = false;
     dir = STOP;
@@ -83,17 +121,22 @@ void Setup() {
     SpawnFood();
 }
 
-void Logic(float dt) {
-    if (bonusFood) {
+void Logic(float dt)
+{
+    if (bonusFood)
+    {
         bonusTimer -= dt;
-        if (bonusTimer <= 0.f) SpawnFood();
+        if (bonusTimer <= 0.f)
+            SpawnFood();
     }
 
     dir = nextDir;
-    if (dir == STOP) return; 
+    if (dir == STOP)
+        return;
 
     Segment head = snake.front();
-    switch (dir) {
+    switch (dir)
+    {
     case LEFT:
         head.x--;
         break;
@@ -110,12 +153,15 @@ void Logic(float dt) {
         break;
     }
 
-    if (head.x < 0 || head.x >= width || head.y < 0 || head.y >= height) {
+    if (head.x < 0 || head.x >= width || head.y < 0 || head.y >= height)
+    {
         gameOver = true;
         return;
     }
-    for (auto &s : snake) {
-        if (s.x == head.x && s.y == head.y) {
+    for (auto &s : snake)
+    {
+        if (s.x == head.x && s.y == head.y)
+        {
             gameOver = true;
             return;
         }
@@ -123,14 +169,17 @@ void Logic(float dt) {
 
     snake.push_front(head);
 
-    if (head.x == foodX && head.y == foodY) {
+    if (head.x == foodX && head.y == foodY)
+    {
         score += bonusFood ? 5 : 1;
         SpawnFood();
     }
-    else snake.pop_back();
+    else
+        snake.pop_back();
 }
 
-int main() {
+int main()
+{
     srand((unsigned)time(0));
     LoadHighScore();
     Setup();
@@ -139,10 +188,11 @@ int main() {
     window.setFramerateLimit(60);
 
     sf::Font font;
-    bool hasFont = font.loadFromFile("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf");
+    bool hasFont = font.loadFromFile(kFontPath);
 
     sf::Text hud;
-    if (hasFont) {
+    if (hasFont)
+    {
         hud.setFont(font);
         hud.setCharacterSize(20);
         hud.setFillColor(sf::Color::White);
@@ -150,7 +200,8 @@ int main() {
     }
 
     sf::Text bigMsg;
-    if (hasFont) {
+    if (hasFont)
+    {
         bigMsg.setFont(font);
         bigMsg.setCharacterSize(36);
         bigMsg.setFillColor(sf::Color::White);
@@ -160,30 +211,45 @@ int main() {
     sf::Clock clock;
     sf::Clock deltaClock;
 
-    while (window.isOpen()) {
+    // One frame of the game. The desktop build calls it in a while loop.
+    // The browser build hands it to the browser's frame callback.
+    auto frame = [&]()
+    {
         sf::Event event;
-        while (window.pollEvent(event)) {
-            if (event.type == sf::Event::Closed) window.close();
+        while (window.pollEvent(event))
+        {
+            if (event.type == sf::Event::Closed)
+                window.close();
 
-            if (event.type == sf::Event::KeyPressed) {
-                if (!gameOver) {
-                    if ((event.key.code == sf::Keyboard::A || event.key.code == sf::Keyboard::Left) && dir != RIGHT) nextDir = LEFT;
+            if (event.type == sf::Event::KeyPressed)
+            {
+                if (!gameOver)
+                {
+                    if ((event.key.code == sf::Keyboard::A || event.key.code == sf::Keyboard::Left) && dir != RIGHT)
+                        nextDir = LEFT;
 
-                    else if ((event.key.code == sf::Keyboard::D || event.key.code == sf::Keyboard::Right) && dir != LEFT) nextDir = RIGHT;
+                    else if ((event.key.code == sf::Keyboard::D || event.key.code == sf::Keyboard::Right) && dir != LEFT)
+                        nextDir = RIGHT;
 
-                    else if ((event.key.code == sf::Keyboard::W || event.key.code == sf::Keyboard::Up) && dir != DOWN) nextDir = UP;
+                    else if ((event.key.code == sf::Keyboard::W || event.key.code == sf::Keyboard::Up) && dir != DOWN)
+                        nextDir = UP;
 
-                    else if ((event.key.code == sf::Keyboard::S || event.key.code == sf::Keyboard::Down) && dir != UP) nextDir = DOWN;
-                    
-                    else if (event.key.code == sf::Keyboard::P) paused = !paused;
+                    else if ((event.key.code == sf::Keyboard::S || event.key.code == sf::Keyboard::Down) && dir != UP)
+                        nextDir = DOWN;
+
+                    else if (event.key.code == sf::Keyboard::P)
+                        paused = !paused;
                 }
-                else if (event.key.code == sf::Keyboard::Enter) Setup();
+                else if (event.key.code == sf::Keyboard::Enter)
+                    Setup();
             }
         }
 
         float dt = deltaClock.restart().asSeconds();
+        (void)dt;
 
-        if (!gameOver && !paused && clock.getElapsedTime().asSeconds() >= frameTime) {
+        if (!gameOver && !paused && clock.getElapsedTime().asSeconds() >= frameTime)
+        {
             Logic(frameTime);
             if (gameOver)
                 SaveHighScore();
@@ -193,13 +259,15 @@ int main() {
         window.clear(sf::Color(15, 15, 20));
 
         // grid background
-        for (int gx = 0; gx <= width; gx++) {
+        for (int gx = 0; gx <= width; gx++)
+        {
             sf::Vertex line[] = {
                 sf::Vertex(sf::Vector2f(gx * blockSize, 0), sf::Color(30, 30, 38)),
                 sf::Vertex(sf::Vector2f(gx * blockSize, height * blockSize), sf::Color(30, 30, 38))};
             window.draw(line, 2, sf::Lines);
         }
-        for (int gy = 0; gy <= height; gy++) {
+        for (int gy = 0; gy <= height; gy++)
+        {
             sf::Vertex line[] = {
                 sf::Vertex(sf::Vector2f(0, gy * blockSize), sf::Color(30, 30, 38)),
                 sf::Vertex(sf::Vector2f(width * blockSize, gy * blockSize), sf::Color(30, 30, 38))};
@@ -216,8 +284,9 @@ int main() {
         food.setOutlineColor(sf::Color(255, 255, 255, 120));
         window.draw(food);
 
-        // snake (gradient head -> tail, rounded look)
-        for (size_t i = 0; i < snake.size(); i++) {
+        // snake (color shifts from head to tail, rounded look)
+        for (size_t i = 0; i < snake.size(); i++)
+        {
             float t = (snake.size() <= 1) ? 0 : (float)i / (snake.size() - 1);
             sf::Color c(
                 (sf::Uint8)(60 + t * 20),
@@ -230,16 +299,21 @@ int main() {
         }
 
         // eyes on head
-        if (!snake.empty()) {
+        if (!snake.empty())
+        {
             sf::CircleShape eye(2.5f);
             eye.setFillColor(sf::Color::Black);
             float hx = snake[0].x * blockSize + blockSize / 2.f;
             float hy = snake[0].y * blockSize + blockSize / 2.f;
             float ox = 0, oy = 0;
-            if (dir == LEFT) ox = -5;
-            else if (dir == RIGHT) ox = 5;
-            else if (dir == UP) oy = -5;
-            else if (dir == DOWN) oy = 5;
+            if (dir == LEFT)
+                ox = -5;
+            else if (dir == RIGHT)
+                ox = 5;
+            else if (dir == UP)
+                oy = -5;
+            else if (dir == DOWN)
+                oy = 5;
             eye.setPosition(hx + ox - 6, hy + oy - 3);
             window.draw(eye);
             eye.setPosition(hx + ox + 3, hy + oy - 3);
@@ -247,11 +321,13 @@ int main() {
         }
 
         // HUD
-        if (hasFont) {
+        if (hasFont)
+        {
             hud.setString("Score: " + std::to_string(score) + "   High Score: " + std::to_string(highScore) + (paused ? "   [PAUSED]" : ""));
             window.draw(hud);
 
-            if (gameOver) {
+            if (gameOver)
+            {
                 bigMsg.setString("GAME OVER - Press Enter to Restart");
                 bigMsg.setPosition((width * blockSize - bigMsg.getLocalBounds().width) / 2.f, height * blockSize / 2.f - 20);
                 window.draw(bigMsg);
@@ -259,7 +335,16 @@ int main() {
         }
 
         window.display();
-    }
+    };
+
+#ifdef __EMSCRIPTEN__
+    static std::function<void()> webFrame = frame;
+    emscripten_set_main_loop([]()
+                             { webFrame(); }, 0, 1);
+#else
+    while (window.isOpen())
+        frame();
+#endif
 
     return 0;
 }
