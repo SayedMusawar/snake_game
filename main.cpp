@@ -11,9 +11,16 @@
 #include <cstdlib>
 #include <deque>
 #include <cmath>
+#include <algorithm>
 
+#ifdef __EMSCRIPTEN__
+// Browser build: the board size is picked at startup to suit the screen (see main).
+int width = 32;
+int height = 24;
+#else
 const int width = 32;
 const int height = 24;
+#endif
 const int blockSize = 24;
 const float frameTime = 0.09f;
 
@@ -180,6 +187,19 @@ void Logic(float dt)
 
 int main()
 {
+#ifdef __EMSCRIPTEN__
+    // On a small screen (a phone), use a smaller board so the cells stay big enough to play.
+    // The page keeps 84 pixels under the board for the buttons and the hint,
+    // and the score strip inside the canvas takes 50 more.
+    int screenW = EM_ASM_INT({ return window.innerWidth; });
+    int screenH = EM_ASM_INT({ return window.innerHeight; });
+    if (screenW < 700 || screenH < 560)
+    {
+        width = std::max(10, std::min(32, screenW / blockSize));
+        height = std::max(10, std::min(24, (screenH - 84 - 50) / blockSize));
+    }
+#endif
+
     srand((unsigned)time(0));
     LoadHighScore();
     Setup();
@@ -323,14 +343,37 @@ int main()
         // HUD
         if (hasFont)
         {
-            hud.setString("Score: " + std::to_string(score) + "   High Score: " + std::to_string(highScore) + (paused ? "   [PAUSED]" : ""));
+            // A narrow board (a phone) gets shorter text so everything fits.
+            bool narrow = width * blockSize < 600;
+
+            hud.setCharacterSize(narrow ? 16 : 20);
+            if (narrow)
+                hud.setString("Score: " + std::to_string(score) + "  High: " + std::to_string(highScore) + (paused ? "  [PAUSED]" : ""));
+            else
+                hud.setString("Score: " + std::to_string(score) + "   High Score: " + std::to_string(highScore) + (paused ? "   [PAUSED]" : ""));
             window.draw(hud);
 
             if (gameOver)
             {
-                bigMsg.setString("GAME OVER - Press Enter to Restart");
-                bigMsg.setPosition((width * blockSize - bigMsg.getLocalBounds().width) / 2.f, height * blockSize / 2.f - 20);
-                window.draw(bigMsg);
+                if (narrow)
+                {
+                    bigMsg.setCharacterSize(36);
+                    bigMsg.setString("GAME OVER");
+                    bigMsg.setPosition((width * blockSize - bigMsg.getLocalBounds().width) / 2.f, height * blockSize / 2.f - 40);
+                    window.draw(bigMsg);
+
+                    bigMsg.setCharacterSize(18);
+                    bigMsg.setString("Press Enter or Restart");
+                    bigMsg.setPosition((width * blockSize - bigMsg.getLocalBounds().width) / 2.f, height * blockSize / 2.f + 8);
+                    window.draw(bigMsg);
+                }
+                else
+                {
+                    bigMsg.setCharacterSize(36);
+                    bigMsg.setString("GAME OVER - Press Enter to Restart");
+                    bigMsg.setPosition((width * blockSize - bigMsg.getLocalBounds().width) / 2.f, height * blockSize / 2.f - 20);
+                    window.draw(bigMsg);
+                }
             }
         }
 
